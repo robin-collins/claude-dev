@@ -170,11 +170,15 @@ const ChatView: React.FC<ChatViewProps> = ({ messages, isHidden, onMessagesUpdat
 	const handleSecondaryButtonClick = () => {
 		switch (claudeAsk) {
 			case "request_limit_reached":
-			case "tool":
 				startNewTask()
 				break
+			case "tool":
 			case "command":
-				vscode.postMessage({ type: "askResponse", askResponse: "noButtonTapped" })
+				vscode.postMessage({
+					type: "askResponse",
+					askResponse: "noButtonTapped",
+					text: "The user didn't approve the execution of this task. Please provide further instructions or an alternative approach."
+				})
 				break
 		}
 		setTextAreaDisabled(true)

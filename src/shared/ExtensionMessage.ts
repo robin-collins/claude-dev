@@ -2,7 +2,15 @@ export interface ExtensionMessage {
     type: "action" | "state" | "taskHistory" | "error" | "loadedTaskHistory"
     text?: string
     action?: "plusButtonTapped" | "settingsButtonTapped" | "didBecomeVisible" | "viewTaskHistory" | "taskHistoryCleared" | "newTaskCreated"
-    state?: { didOpenOnce: boolean, apiKey?: string, maxRequestsPerTask?: number, claudeMessages: ClaudeMessage[] }
+    state?: {
+        didOpenOnce: boolean,
+        apiKey?: string,
+        maxRequestsPerTask?: number,
+        claudeMessages: ClaudeMessage[],
+        autoApproveNonDestructive: boolean,
+        autoApproveWriteToFile: boolean,
+        autoApproveExecuteCommand: boolean
+    }
     taskHistory?: Task[]
     message?: string
     task?: string

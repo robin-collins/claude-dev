@@ -23,6 +23,9 @@ const App: React.FC = () => {
 	const [maxRequestsPerTask, setMaxRequestsPerTask] = useState<string>("")
 	const [claudeMessages, setClaudeMessages] = useState<ClaudeMessage[]>([])
 	const [taskHistory, setTaskHistory] = useState<TaskHistoryItem[]>([])
+	const [autoApproveNonDestructive, setAutoApproveNonDestructive] = useState<boolean>(false)
+	const [autoApproveWriteToFile, setAutoApproveWriteToFile] = useState<boolean>(false)
+	const [autoApproveExecuteCommand, setAutoApproveExecuteCommand] = useState<boolean>(false)
 
 	useEffect(() => {
 		vscode.postMessage({ type: "webviewDidLaunch" })
@@ -41,6 +44,9 @@ const App: React.FC = () => {
 							: ""
 					)
 					setClaudeMessages(message.state!.claudeMessages)
+					setAutoApproveNonDestructive(message.state!.autoApproveNonDestructive || false)
+					setAutoApproveWriteToFile(message.state!.autoApproveWriteToFile || false)
+					setAutoApproveExecuteCommand(message.state!.autoApproveExecuteCommand || false)
 					break
 				case "action":
 					switch (message.action!) {
@@ -101,6 +107,12 @@ const App: React.FC = () => {
 							setApiKey={setApiKey}
 							maxRequestsPerTask={maxRequestsPerTask}
 							setMaxRequestsPerTask={setMaxRequestsPerTask}
+							autoApproveNonDestructive={autoApproveNonDestructive}
+							setAutoApproveNonDestructive={setAutoApproveNonDestructive}
+							autoApproveWriteToFile={autoApproveWriteToFile}
+							setAutoApproveWriteToFile={setAutoApproveWriteToFile}
+							autoApproveExecuteCommand={autoApproveExecuteCommand}
+							setAutoApproveExecuteCommand={setAutoApproveExecuteCommand}
 							onDone={() => setShowSettings(false)}
 						/>
 					)}

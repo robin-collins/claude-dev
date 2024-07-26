@@ -26,6 +26,26 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Claude Dev",
+      "properties": {
+        "claudeDev.autoApprove.nonDestructive": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-approve non-destructive actions like reading a file or listing files."
+        },
+        "claudeDev.autoApprove.writeToFile": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-approve write_to_file actions."
+        },
+        "claudeDev.autoApprove.executeCommand": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-approve execute_command actions."
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {

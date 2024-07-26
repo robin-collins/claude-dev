@@ -24,14 +24,28 @@ export class ClaudeDev {
     private apiHandler: ApiHandler
     private messageFormatter: MessageFormatter
     private toolExecutor: ToolExecutor
+    private autoApproveNonDestructive: boolean
+    private autoApproveWriteToFile: boolean
+    private autoApproveExecuteCommand: boolean
 
-    constructor(provider: SidebarProvider, task: string, apiKey: string, maxRequestsPerTask?: number) {
+    constructor(
+        provider: SidebarProvider, 
+        task: string, 
+        apiKey: string, 
+        maxRequestsPerTask?: number,
+        autoApproveNonDestructive: boolean = false,
+        autoApproveWriteToFile: boolean = false,
+        autoApproveExecuteCommand: boolean = false
+    ) {
         this.providerRef = new WeakRef(provider)
         this.client = new Anthropic({ apiKey })
         this.maxRequestsPerTask = maxRequestsPerTask ?? DEFAULT_MAX_REQUESTS_PER_TASK
         this.taskHistoryManager = new TaskHistoryManager(provider.context)
         this.messageFormatter = new MessageFormatter()
-        this.toolExecutor = new ToolExecutor(this)
+        this.autoApproveNonDestructive = autoApproveNonDestructive
+        this.autoApproveWriteToFile = autoApproveWriteToFile
+        this.autoApproveExecuteCommand = autoApproveExecuteCommand
+        this.toolExecutor = new ToolExecutor(this, this.autoApproveNonDestructive, this.autoApproveWriteToFile, this.autoApproveExecuteCommand)
         this.apiHandler = new ApiHandler(this.client, this.conversationHistory, this)
 
         this.startTask(task)
@@ -44,6 +58,21 @@ export class ClaudeDev {
 
     updateMaxRequestsPerTask(maxRequestsPerTask: number | undefined) {
         this.maxRequestsPerTask = maxRequestsPerTask ?? DEFAULT_MAX_REQUESTS_PER_TASK
+    }
+
+    updateAutoApproveSettings(
+        autoApproveNonDestructive: boolean,
+        autoApproveWriteToFile: boolean,
+        autoApproveExecuteCommand: boolean
+    ) {
+        this.autoApproveNonDestructive = autoApproveNonDestructive
+        this.autoApproveWriteToFile = autoApproveWriteToFile
+        this.autoApproveExecuteCommand = autoApproveExecuteCommand
+        this.toolExecutor.updateAutoApproveSettings(
+            autoApproveNonDestructive,
+            autoApproveWriteToFile,
+            autoApproveExecuteCommand
+        )
     }
 
     async handleWebviewAskResponse(askResponse: ClaudeAskResponse, text?: string) {

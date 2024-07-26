@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react"
-import { VSCodeTextField, VSCodeDivider, VSCodeLink, VSCodeButton } from "@vscode/webview-ui-toolkit/react"
+import { VSCodeTextField, VSCodeDivider, VSCodeLink, VSCodeButton, VSCodeCheckbox } from "@vscode/webview-ui-toolkit/react"
 import { vscode } from "../utilities/vscode"
 
 type SettingsViewProps = {
@@ -7,10 +7,30 @@ type SettingsViewProps = {
 	setApiKey: React.Dispatch<React.SetStateAction<string>>
 	maxRequestsPerTask: string
 	setMaxRequestsPerTask: React.Dispatch<React.SetStateAction<string>>
-	onDone: () => void // Define the type of the onDone prop
+	autoApproveNonDestructive: boolean
+	setAutoApproveNonDestructive: React.Dispatch<React.SetStateAction<boolean>>
+	autoApproveWriteToFile: boolean
+	setAutoApproveWriteToFile: React.Dispatch<React.SetStateAction<boolean>>
+	autoApproveExecuteCommand: boolean
+	setAutoApproveExecuteCommand: React.Dispatch<React.SetStateAction<boolean>>
+	onDone: () => void
 }
 
-const SettingsView = ({ apiKey, setApiKey, maxRequestsPerTask, setMaxRequestsPerTask, onDone }: SettingsViewProps) => {
+type AutoApproveSettingType = "autoApproveNonDestructive" | "autoApproveWriteToFile" | "autoApproveExecuteCommand";
+
+const SettingsView = ({
+	apiKey,
+	setApiKey,
+	maxRequestsPerTask,
+	setMaxRequestsPerTask,
+	autoApproveNonDestructive,
+	setAutoApproveNonDestructive,
+	autoApproveWriteToFile,
+	setAutoApproveWriteToFile,
+	autoApproveExecuteCommand,
+	setAutoApproveExecuteCommand,
+	onDone
+}: SettingsViewProps) => {
 	const [apiKeyErrorMessage, setApiKeyErrorMessage] = useState<string | undefined>(undefined)
 	const [maxRequestsErrorMessage, setMaxRequestsErrorMessage] = useState<string | undefined>(undefined)
 
@@ -51,10 +71,17 @@ const SettingsView = ({ apiKey, setApiKey, maxRequestsPerTask, setMaxRequestsPer
         }
 	}
 
+	const handleAutoApproveChange = (setter: React.Dispatch<React.SetStateAction<boolean>>, settingType: AutoApproveSettingType) => {
+		return (e: any) => {
+			const target = e.target as HTMLInputElement;
+			setter(target.checked);
+			vscode.postMessage({ type: settingType, value: target.checked });
+		};
+	}
+
 	const handleSubmit = () => {
 		vscode.postMessage({ type: "apiKey", text: apiKey })
 		vscode.postMessage({ type: "maxRequestsPerTask", text: maxRequestsPerTask })
-
 		onDone()
 	}
 
@@ -137,6 +164,35 @@ const SettingsView = ({ apiKey, setApiKey, maxRequestsPerTask, setMaxRequestsPer
 					}}>
 					If Claude Dev reaches this limit, it will pause and ask for your permission before making additional
 					requests.
+				</p>
+			</div>
+
+			<VSCodeDivider />
+
+			<div style={{ marginTop: "20px", marginBottom: "20px" }}>
+				<h4 style={{ color: "var(--vscode-foreground)", marginBottom: "10px" }}>Auto-approve Settings</h4>
+				<VSCodeCheckbox
+					checked={autoApproveNonDestructive}
+					onChange={handleAutoApproveChange(setAutoApproveNonDestructive, "autoApproveNonDestructive") as any}>
+					Auto-approve non-destructive actions (read_file, list_files)
+				</VSCodeCheckbox>
+				<VSCodeCheckbox
+					checked={autoApproveWriteToFile}
+					onChange={handleAutoApproveChange(setAutoApproveWriteToFile, "autoApproveWriteToFile") as any}>
+					Auto-approve write_to_file actions
+				</VSCodeCheckbox>
+				<VSCodeCheckbox
+					checked={autoApproveExecuteCommand}
+					onChange={handleAutoApproveChange(setAutoApproveExecuteCommand, "autoApproveExecuteCommand") as any}>
+					Auto-approve execute_command actions
+				</VSCodeCheckbox>
+				<p
+					style={{
+						fontSize: "12px",
+						marginTop: "5px",
+						color: "var(--vscode-descriptionForeground)",
+					}}>
+					Be cautious when enabling auto-approve for write_to_file and execute_command, as these can modify your system.
 				</p>
 			</div>
 

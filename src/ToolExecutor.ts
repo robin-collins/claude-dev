@@ -10,9 +10,44 @@ import { ClaudeSayTool } from './shared/ExtensionMessage';
 
 export class ToolExecutor {
     private claudeDev: ClaudeDev;
+    private autoApproveNonDestructive: boolean;
+    private autoApproveWriteToFile: boolean;
+    private autoApproveExecuteCommand: boolean;
 
-    constructor(claudeDev: ClaudeDev) {
+    constructor(
+        claudeDev: ClaudeDev,
+        autoApproveNonDestructive: boolean,
+        autoApproveWriteToFile: boolean,
+        autoApproveExecuteCommand: boolean
+    ) {
         this.claudeDev = claudeDev;
+        this.autoApproveNonDestructive = autoApproveNonDestructive;
+        this.autoApproveWriteToFile = autoApproveWriteToFile;
+        this.autoApproveExecuteCommand = autoApproveExecuteCommand;
+    }
+
+    updateAutoApproveSettings(
+        autoApproveNonDestructive: boolean,
+        autoApproveWriteToFile: boolean,
+        autoApproveExecuteCommand: boolean
+    ) {
+        this.autoApproveNonDestructive = autoApproveNonDestructive;
+        this.autoApproveWriteToFile = autoApproveWriteToFile;
+        this.autoApproveExecuteCommand = autoApproveExecuteCommand;
+    }
+
+    private shouldAutoApprove(toolName: ToolName): boolean {
+        switch (toolName) {
+            case 'read_file':
+            case 'list_files':
+                return this.autoApproveNonDestructive;
+            case 'write_to_file':
+                return this.autoApproveWriteToFile;
+            case 'execute_command':
+                return this.autoApproveExecuteCommand;
+            default:
+                return false;
+        }
     }
 
     async executeTool(toolName: ToolName, toolInput: any): Promise<string> {
@@ -60,27 +95,31 @@ export class ToolExecutor {
                     })
                     .join("");
 
-                const { response } = await this.claudeDev.ask(
-                    "tool",
-                    JSON.stringify({
-                        tool: "editedExistingFile",
-                        path: filePath,
-                        diff: completeDiffStringConverted,
-                    } as ClaudeSayTool)
-                );
-                if (response !== "yesButtonTapped") {
-                    return "This operation was not approved by the user.";
+                if (!this.shouldAutoApprove('write_to_file')) {
+                    const { response } = await this.claudeDev.ask(
+                        "tool",
+                        JSON.stringify({
+                            tool: "editedExistingFile",
+                            path: filePath,
+                            diff: completeDiffStringConverted,
+                        } as ClaudeSayTool)
+                    );
+                    if (response !== "yesButtonTapped") {
+                        return "This operation was not approved by the user.";
+                    }
                 }
 
                 await fs.writeFile(filePath, newContent);
                 return `Changes applied to ${filePath}:\n${diffResult}`;
             } else {
-                const { response } = await this.claudeDev.ask(
-                    "tool",
-                    JSON.stringify({ tool: "newFileCreated", path: filePath, content: newContent } as ClaudeSayTool)
-                );
-                if (response !== "yesButtonTapped") {
-                    return "This operation was not approved by the user.";
+                if (!this.shouldAutoApprove('write_to_file')) {
+                    const { response } = await this.claudeDev.ask(
+                        "tool",
+                        JSON.stringify({ tool: "newFileCreated", path: filePath, content: newContent } as ClaudeSayTool)
+                    );
+                    if (response !== "yesButtonTapped") {
+                        return "This operation was not approved by the user.";
+                    }
                 }
                 await fs.mkdir(path.dirname(filePath), { recursive: true });
                 await fs.writeFile(filePath, newContent);
@@ -96,12 +135,14 @@ export class ToolExecutor {
     private async readFile(filePath: string): Promise<string> {
         try {
             const content = await fs.readFile(filePath, "utf-8");
-            const { response } = await this.claudeDev.ask(
-                "tool",
-                JSON.stringify({ tool: "readFile", path: filePath, content } as ClaudeSayTool)
-            );
-            if (response !== "yesButtonTapped") {
-                return "This operation was not approved by the user.";
+            if (!this.shouldAutoApprove('read_file')) {
+                const { response } = await this.claudeDev.ask(
+                    "tool",
+                    JSON.stringify({ tool: "readFile", path: filePath, content } as ClaudeSayTool)
+                );
+                if (response !== "yesButtonTapped") {
+                    return "This operation was not approved by the user.";
+                }
             }
             return content;
         } catch (error) {
@@ -116,7 +157,7 @@ export class ToolExecutor {
         const root = process.platform === "win32" ? path.parse(absolutePath).root : "/";
         const isRoot = absolutePath === root;
         if (isRoot) {
-            if (shouldLog) {
+            if (shouldLog && !this.shouldAutoApprove('list_files')) {
                 const { response } = await this.claudeDev.ask(
                     "tool",
                     JSON.stringify({ tool: "listFiles", path: dirPath, content: root } as ClaudeSayTool)
@@ -136,7 +177,7 @@ export class ToolExecutor {
             };
             const entries = await glob("*", options);
             const result = entries.slice(0, 500).join("\n");
-            if (shouldLog) {
+            if (shouldLog && !this.shouldAutoApprove('list_files')) {
                 const { response } = await this.claudeDev.ask(
                     "tool",
                     JSON.stringify({ tool: "listFiles", path: dirPath, content: result } as ClaudeSayTool)
@@ -159,9 +200,11 @@ export class ToolExecutor {
     }
 
     private async executeCommand(command: string): Promise<string> {
-        const { response } = await this.claudeDev.ask("command", command);
-        if (response !== "yesButtonTapped") {
-            return "Command execution was not approved by the user.";
+        if (!this.shouldAutoApprove('execute_command')) {
+            const { response } = await this.claudeDev.ask("command", command);
+            if (response !== "yesButtonTapped") {
+                return "Command execution was not approved by the user.";
+            }
         }
         try {
             let result = "";
