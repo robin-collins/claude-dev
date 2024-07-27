@@ -67,8 +67,8 @@ const SettingsView = ({
 				setMaxRequestsErrorMessage(undefined)
 			}
 		} else {
-            setMaxRequestsErrorMessage(undefined)
-        }
+			setMaxRequestsErrorMessage(undefined)
+		}
 	}
 
 	const handleAutoApproveChange = (setter: React.Dispatch<React.SetStateAction<boolean>>, settingType: AutoApproveSettingType) => {
@@ -89,7 +89,7 @@ const SettingsView = ({
 	useEffect(() => {
 		validateApiKey(apiKey)
 		validateMaxRequests(maxRequestsPerTask)
-	// eslint-disable-next-line react-hooks/exhaustive-deps
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [])
 
 	return (
@@ -209,7 +209,7 @@ const SettingsView = ({
 				}}>
 				<p>
 					This project was made for Anthropic's "Build with Claude June 2024 contest"
-					<br/>
+					<br />
 					<VSCodeLink href="https://github.com/saoudrizwan/claude-dev">
 						https://github.com/saoudrizwan/claude-dev
 					</VSCodeLink>
