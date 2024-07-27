@@ -6,7 +6,7 @@ import { WebviewMessage } from "../shared/WebviewMessage"
 import { ClaudeDev } from "../ClaudeDev"
 
 type ExtensionSecretKey = "apiKey"
-type ExtensionGlobalStateKey = "didOpenOnce" | "maxRequestsPerTask"
+type ExtensionGlobalStateKey = "didOpenOnce" | "maxRequestsPerTask" | "autoApproveNonDestructive" | "autoApproveWriteToFile" | "autoApproveExecuteCommand"
 type ExtensionWorkspaceStateKey = "claudeMessages"
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
@@ -47,12 +47,29 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
 	// Initializing new instance of ClaudeDev will make sure that any agentically running promises in old instance don't affect our new task. this essentially creates a fresh slate for the new task
 	async tryToInitClaudeDevWithTask(task: string) {
-		const [apiKey, maxRequestsPerTask] = await Promise.all([
+		const [
+			apiKey,
+			maxRequestsPerTask,
+			autoApproveNonDestructive,
+			autoApproveWriteToFile,
+			autoApproveExecuteCommand
+		] = await Promise.all([
 			this.getSecret("apiKey") as Promise<string | undefined>,
 			this.getGlobalState("maxRequestsPerTask") as Promise<number | undefined>,
+			this.getGlobalState("autoApproveNonDestructive") as Promise<boolean>,
+			this.getGlobalState("autoApproveWriteToFile") as Promise<boolean>,
+			this.getGlobalState("autoApproveExecuteCommand") as Promise<boolean>,
 		])
 		if (this.view && apiKey) {
-			this.claudeDev = new ClaudeDev(this, task, apiKey, maxRequestsPerTask)
+			this.claudeDev = new ClaudeDev(
+				this,
+				task,
+				apiKey,
+				maxRequestsPerTask,
+				autoApproveNonDestructive || false,
+				autoApproveWriteToFile || false,
+				autoApproveExecuteCommand || false
+			)
 			this.currentTask = task
 		}
 	}
@@ -138,6 +155,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 					this.claudeDev?.updateMaxRequestsPerTask(result)
 					await this.postStateToWebview()
 					break
+				case "autoApproveNonDestructive":
+				case "autoApproveWriteToFile":
+				case "autoApproveExecuteCommand":
+					await this.updateAutoApproveSetting(message.type, message.value as boolean)
+					break
 				case "askResponse":
 					this.claudeDev?.handleWebviewAskResponse(message.askResponse!, message.text)
 					break
@@ -149,16 +171,50 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		})
 	}
 
+	private async updateAutoApproveSetting(settingType: ExtensionGlobalStateKey, value: boolean) {
+		await this.updateGlobalState(settingType, value)
+		const [autoApproveNonDestructive, autoApproveWriteToFile, autoApproveExecuteCommand] = await Promise.all([
+			this.getGlobalState("autoApproveNonDestructive") as Promise<boolean>,
+			this.getGlobalState("autoApproveWriteToFile") as Promise<boolean>,
+			this.getGlobalState("autoApproveExecuteCommand") as Promise<boolean>,
+		])
+		this.claudeDev?.updateAutoApproveSettings(
+			autoApproveNonDestructive,
+			autoApproveWriteToFile,
+			autoApproveExecuteCommand
+		)
+		await this.postStateToWebview()
+	}
+
 	async postStateToWebview() {
-		const [didOpenOnce, apiKey, maxRequestsPerTask, claudeMessages] = await Promise.all([
+		const [
+			didOpenOnce,
+			apiKey,
+			maxRequestsPerTask,
+			claudeMessages,
+			autoApproveNonDestructive,
+			autoApproveWriteToFile,
+			autoApproveExecuteCommand
+		] = await Promise.all([
 			this.getGlobalState("didOpenOnce") as Promise<boolean | undefined>,
 			this.getSecret("apiKey") as Promise<string | undefined>,
 			this.getGlobalState("maxRequestsPerTask") as Promise<number | undefined>,
 			this.getClaudeMessages(),
+			this.getGlobalState("autoApproveNonDestructive") as Promise<boolean | undefined>,
+			this.getGlobalState("autoApproveWriteToFile") as Promise<boolean | undefined>,
+			this.getGlobalState("autoApproveExecuteCommand") as Promise<boolean | undefined>,
 		])
 		this.postMessageToWebview({
 			type: "state",
-			state: { didOpenOnce: !!didOpenOnce, apiKey, maxRequestsPerTask, claudeMessages },
+			state: {
+				didOpenOnce: !!didOpenOnce,
+				apiKey,
+				maxRequestsPerTask,
+				claudeMessages,
+				autoApproveNonDestructive: !!autoApproveNonDestructive,
+				autoApproveWriteToFile: !!autoApproveWriteToFile,
+				autoApproveExecuteCommand: !!autoApproveExecuteCommand
+			},
 		})
 	}
 
