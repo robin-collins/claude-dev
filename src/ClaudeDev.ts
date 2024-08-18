@@ -245,7 +245,9 @@ export class ClaudeDev {
 	private executeCommandRunningProcess?: ResultPromise
 	private providerRef: WeakRef<ClaudeDevProvider>
 	private abort: boolean = false
-
+	private excludedFiles: Set<string> = new Set()
+	private whitelistedFiles: Set<string> = new Set()
+	
 	constructor(
 		provider: ClaudeDevProvider,
 		apiConfiguration: ApiConfiguration,
@@ -275,6 +277,14 @@ export class ClaudeDev {
 		} else {
 			throw new Error("Either historyItem or task/images must be provided")
 		}
+	}
+
+		setExcludedFiles(files: string[]) {
+			this.excludedFiles = new Set(files);
+	}
+
+	setWhitelistedFiles(files: string[]) {
+			this.whitelistedFiles = new Set(files);
 	}
 
 	updateApi(apiConfiguration: ApiConfiguration) {
@@ -389,6 +399,8 @@ export class ClaudeDev {
 				cacheWrites: apiMetrics.totalCacheWrites,
 				cacheReads: apiMetrics.totalCacheReads,
 				totalCost: apiMetrics.totalCost,
+				excludedFiles: Array.from(this.excludedFiles),
+				whitelistedFiles: Array.from(this.whitelistedFiles)
 			})
 		} catch (error) {
 			console.error("Failed to save claude messages:", error)
@@ -806,6 +818,7 @@ export class ClaudeDev {
 				if (isLast) {
 					await this.closeDiffViews()
 				}
+				this.addToWhitelist(absolutePath)
 				return `Changes applied to ${relPath}:\n${diffResult}`
 			} else {
 				const fileName = path.basename(absolutePath)
@@ -843,6 +856,7 @@ export class ClaudeDev {
 				if (isLast) {
 					await this.closeDiffViews()
 				}
+				this.addToWhitelist(absolutePath)
 				return `New file created and content written to ${relPath}`
 			}
 		} catch (error) {
@@ -878,21 +892,34 @@ export class ClaudeDev {
 		}
 		try {
 			const absolutePath = path.resolve(cwd, relPath)
-			const content = await fs.readFile(absolutePath, "utf-8")
 			
-			if (this.approveReadFile) {
-				const { response, text, images } = await this.ask(
-					"tool",
-					JSON.stringify({ tool: "readFile", path: this.getReadablePath(relPath), content } as ClaudeSayTool)
-				)
-				if (response !== "yesButtonTapped") {
-					if (response === "messageResponse") {
-						await this.say("user_feedback", text, images)
-						return this.formatIntoToolResponse(this.formatGenericToolFeedback(text), images)
+			if (this.excludedFiles.has(absolutePath)) {
+				return "Error: This file has been permanently excluded from reading."
+			}
+			
+			if (!this.whitelistedFiles.has(absolutePath)) {
+				if (this.approveReadFile) {
+					const { response, text, images } = await this.ask(
+						"tool",
+						JSON.stringify({ 
+							tool: "readFile", 
+							path: this.getReadablePath(relPath), 
+							message: "Claude wants to read this file. Do you want to approve this operation? If denied, the file will be permanently excluded from future read operations."
+						} as ClaudeSayTool)
+					)
+					if (response !== "yesButtonTapped") {
+						if (response === "messageResponse") {
+							await this.say("user_feedback", text, images)
+							return this.formatIntoToolResponse(this.formatGenericToolFeedback(text), images)
+						}
+						this.addToExclusionList(absolutePath)
+						return "The user denied this operation. The file has been added to the permanent exclusion list."
 					}
-					return "The user denied this operation."
+					this.addToWhitelist(absolutePath)
 				}
 			}
+			
+			const content = await fs.readFile(absolutePath, "utf-8")
 			return content
 		} catch (error) {
 			const errorString = `Error reading file: ${JSON.stringify(serializeError(error))}`
@@ -1014,7 +1041,15 @@ export class ClaudeDev {
 			.map((file) => {
 				// convert absolute path to relative path
 				const relativePath = path.relative(absolutePath, file)
-				return file.endsWith("/") ? relativePath + "/" : relativePath
+				const isExcluded = this.excludedFiles.has(file)
+				const isWhitelisted = this.whitelistedFiles.has(file)
+				let suffix = ""
+				if (isExcluded) {
+					suffix = " [EXCLUDED]"
+				} else if (!isWhitelisted) {
+					suffix = " [NEEDS APPROVAL]"
+				}
+				return (file.endsWith("/") ? relativePath + "/" : relativePath) + suffix
 			})
 			.sort((a, b) => {
 				// sort directories before files
@@ -1447,5 +1482,15 @@ VSCode Opened Tabs: ${
 
 	formatGenericToolFeedback(feedback?: string) {
 		return `The user denied this operation and provided the following feedback:\n<feedback>\n${feedback}\n</feedback>\n\n${this.getPotentiallyRelevantDetails()}`
+	}
+
+	addToExclusionList(filePath: string) {
+		this.excludedFiles.add(filePath)
+		this.whitelistedFiles.delete(filePath)
+	}
+
+	addToWhitelist(filePath: string) {
+		this.whitelistedFiles.add(filePath)
+		this.excludedFiles.delete(filePath)
 	}
 }

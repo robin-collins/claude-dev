@@ -27,6 +27,8 @@ type GlobalStateKey =
 	| "approveListFilesTopLevel"
 	| "approveListFilesRecursively"
 	| "taskHistory"
+	| "excludedFiles"
+	| "whitelistedFiles"
 
 export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 	public static readonly sideBarId = "claude-dev.SidebarProvider" // used in package.json as the view's id. This value cannot be changed due to how vscode caches views based on their id, and updating the id would break existing instances of the extension.
@@ -35,9 +37,15 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 	private view?: vscode.WebviewView | vscode.WebviewPanel
 	private claudeDev?: ClaudeDev
 	private latestAnnouncementId = "aug-17-2024" // update to some unique identifier when we add a new announcement
+	private excludedFiles: Set<string> = new Set()
+	private whitelistedFiles: Set<string> = new Set()
+	private approveReadFile: boolean = true
+	private approveListFilesTopLevel: boolean = true
+	private approveListFilesRecursively: boolean = true
 
 	constructor(readonly context: vscode.ExtensionContext, private readonly outputChannel: vscode.OutputChannel) {
 		this.outputChannel.appendLine("ClaudeDevProvider instantiated")
+		this.loadExcludedAndWhitelistedFiles()
 	}
 
 	/*
@@ -76,10 +84,12 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 			localResourceRoots: [this.context.extensionUri],
 		}
 		webviewView.webview.html = this.getHtmlContent(webviewView.webview)
+		this.outputChannel.appendLine("Set webview HTML content")
 
 		// Sets up an event listener to listen for messages passed from the webview view context
 		// and executes code based on the message that is recieved
 		this.setWebviewMessageListener(webviewView.webview)
+		this.outputChannel.appendLine("Set up webview message listener")
 
 		// Logs show up in bottom panel > Debug Console
 		//console.log("registering listener")
@@ -92,6 +102,7 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 			webviewView.onDidChangeViewState(
 				() => {
 					if (this.view?.visible) {
+						this.outputChannel.appendLine("Webview became visible (panel)")
 						this.postMessageToWebview({ type: "action", action: "didBecomeVisible" })
 					}
 				},
@@ -103,6 +114,7 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 			webviewView.onDidChangeVisibility(
 				() => {
 					if (this.view?.visible) {
+						this.outputChannel.appendLine("Webview became visible (sidebar)")
 						this.postMessageToWebview({ type: "action", action: "didBecomeVisible" })
 					}
 				},
@@ -115,6 +127,7 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 		// This happens when the user closes the view or when the view is closed programmatically
 		webviewView.onDidDispose(
 			async () => {
+				this.outputChannel.appendLine("Webview disposed")
 				await this.dispose()
 			},
 			null,
@@ -125,6 +138,7 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 		vscode.workspace.onDidChangeConfiguration(
 			(e) => {
 				if (e && e.affectsConfiguration("workbench.colorTheme")) {
+					this.outputChannel.appendLine("Color theme changed")
 					// Sends latest theme name to webview
 					this.postStateToWebview()
 				}
@@ -156,6 +170,9 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 			task, 
 			images
 		)
+		this.claudeDev.setExcludedFiles(Array.from(this.excludedFiles))
+		this.claudeDev.setWhitelistedFiles(Array.from(this.whitelistedFiles))
+		this.outputChannel.appendLine("Initialized ClaudeDev with task")
 	}
 
 	async initClaudeDevWithHistoryItem(historyItem: HistoryItem) {
@@ -166,15 +183,24 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 			apiConfiguration,
 			maxRequestsPerTask,
 			customInstructions,
+			this.approveReadFile,
+			this.approveListFilesTopLevel,
+			this.approveListFilesRecursively,
 			undefined,
 			undefined,
 			historyItem
 		)
+		this.excludedFiles = new Set(historyItem.excludedFiles || [])
+		this.whitelistedFiles = new Set(historyItem.whitelistedFiles || [])
+		this.claudeDev.setExcludedFiles(Array.from(this.excludedFiles))
+		this.claudeDev.setWhitelistedFiles(Array.from(this.whitelistedFiles))
+		this.outputChannel.appendLine("Initialized ClaudeDev with history item")
 	}
 
 	// Send any JSON serializable data to the react app
 	async postMessageToWebview(message: ExtensionMessage) {
 		await this.view?.webview.postMessage(message)
+		this.outputChannel.appendLine(`Posted message to webview: ${JSON.stringify(message)}`)
 	}
 
 	/**
@@ -184,7 +210,6 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 	 * are created and inserted into the webview HTML.
 	 *
 	 * @param webview A reference to the extension webview
-	 * @param extensionUri The URI of the directory containing the extension
 	 * @returns A template string literal containing the HTML that should be
 	 * rendered within the webview panel
 	 */
@@ -215,29 +240,13 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 			"codicon.css",
 		])
 
-		// const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, "assets", "main.js"))
-
-		// const styleResetUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, "assets", "reset.css"))
-		// const styleVSCodeUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, "assets", "vscode.css"))
-
-		// // Same for stylesheet
-		// const stylesheetUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, "assets", "main.css"))
-
 		// Use a nonce to only allow a specific script to be run.
-		/*
-        content security policy of your webview to only allow scripts that have a specific nonce
-        create a content security policy meta tag so that only loading scripts with a nonce is allowed
-        As your extension grows you will likely want to add custom styles, fonts, and/or images to your webview. If you do, you will need to update the content security policy meta tag to explicity allow for these resources. E.g.
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; font-src ${webview.cspSource}; img-src ${webview.cspSource} https:; script-src 'nonce-${nonce}';">
-		- 'unsafe-inline' is required for styles due to vscode-webview-toolkit's dynamic style injection
-		- since we pass base64 images to the webview, we need to specify img-src ${webview.cspSource} data:;
-
-        in meta tag we add nonce attribute: A cryptographic nonce (only used once) to allow scripts. The server must generate a unique nonce value each time it transmits a policy. It is critical to provide a nonce that cannot be guessed as bypassing a resource's policy is otherwise trivial.
-        */
 		const nonce = getNonce()
 
+		this.outputChannel.appendLine(`Generated URIs for webview: styles=${stylesUri}, script=${scriptUri}, codicons=${codiconsUri}`)
+
 		// Tip: Install the es6-string-html VS Code extension to enable code highlighting below
-		return /*html*/ `
+		const htmlContent = /*html*/ `
         <!DOCTYPE html>
         <html lang="en">
           <head>
@@ -256,6 +265,9 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
           </body>
         </html>
       `
+
+		this.outputChannel.appendLine(`Generated HTML content: ${htmlContent}`)
+		return htmlContent
 	}
 
 	/**
@@ -267,19 +279,12 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 	private setWebviewMessageListener(webview: vscode.Webview) {
 		webview.onDidReceiveMessage(
 			async (message: WebviewMessage) => {
+				this.outputChannel.appendLine(`Received message from webview: ${JSON.stringify(message)}`)
 				switch (message.type) {
 					case "webviewDidLaunch":
 						await this.postStateToWebview()
 						break
 					case "newTask":
-						// Code that should run in response to the hello message command
-						//vscode.window.showInformationMessage(message.text!)
-
-						// Send a message to our webview.
-						// You can send any JSON serializable data.
-						// Could also do this in extension .ts
-						//this.postMessageToWebview({ type: "text", text: `Extension: ${Date.now()}` })
-						// initializing new instance of ClaudeDev will make sure that any agentically running promises in old instance don't affect our new task. this essentially creates a fresh slate for the new task
 						await this.initClaudeDevWithTask(message.text, message.images)
 						break
 					case "apiConfiguration":
@@ -317,31 +322,47 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 						await this.postStateToWebview()
 						break
 					case "customInstructions":
-						// User may be clearing the field
 						await this.updateGlobalState("customInstructions", message.text || undefined)
 						this.claudeDev?.updateCustomInstructions(message.text || undefined)
 						await this.postStateToWebview()
 						break
-						case "approveReadFile":
-							await this.updateGlobalState("approveReadFile", message.value)
-							this.claudeDev?.updateApproveReadFile(message.value ?? false)
-							await this.postStateToWebview()
-							break
+					case "approveReadFile":
+						await this.updateGlobalState("approveReadFile", message.value)
+						this.approveReadFile = message.value ?? false
+						this.claudeDev?.updateApproveReadFile(message.value ?? false)
+						await this.postStateToWebview()
+						break
 					case "approveListFilesTopLevel":
-							await this.updateGlobalState("approveListFilesTopLevel", message.value)
-							this.claudeDev?.updateApproveListFilesTopLevel(message.value ?? false)
-							await this.postStateToWebview()
-							break
+						await this.updateGlobalState("approveListFilesTopLevel", message.value)
+						this.approveListFilesTopLevel = message.value ?? false
+						this.claudeDev?.updateApproveListFilesTopLevel(message.value ?? false)
+						await this.postStateToWebview()
+						break
 					case "approveListFilesRecursively":
-							await this.updateGlobalState("approveListFilesRecursively", message.value)
-							this.claudeDev?.updateApproveListFilesRecursively(message.value ?? false)
-							await this.postStateToWebview()
-							break
+						await this.updateGlobalState("approveListFilesRecursively", message.value)
+						this.approveListFilesRecursively = message.value ?? false
+						this.claudeDev?.updateApproveListFilesRecursively(message.value ?? false)
+						await this.postStateToWebview()
+						break
 					case "askResponse":
+						if (message.askResponse === "yesButtonTapped" && message.text === "fileReadApproved") {
+							const filePath = message.images?.[0]
+							if (filePath) {
+								this.whitelistedFiles.add(filePath)
+								await this.saveWhitelistedFiles()
+								this.claudeDev?.setWhitelistedFiles(Array.from(this.whitelistedFiles))
+							}
+						} else if (message.askResponse === "noButtonTapped" && message.text === "fileReadDenied") {
+							const filePath = message.images?.[0]
+							if (filePath) {
+								this.excludedFiles.add(filePath)
+								await this.saveExcludedFiles()
+								this.claudeDev?.setExcludedFiles(Array.from(this.excludedFiles))
+							}
+						}
 						this.claudeDev?.handleWebviewAskResponse(message.askResponse!, message.text, message.images)
 						break
 					case "clearTask":
-						// newTask will start a new task with a given task text, while clear task resets the current session and allows for a new task to be started
 						await this.clearTask()
 						await this.postStateToWebview()
 						break
@@ -368,8 +389,18 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 					case "exportTaskWithId":
 						this.exportTaskWithId(message.text!)
 						break
-					// Add more switch case statements here as more webview message commands
-					// are created within the webview context (i.e. inside media/main.js)
+					case "updateExcludedFiles":
+						if (Array.isArray(message.files)) {
+							await this.updateExcludedFiles(message.files)
+							await this.postStateToWebview()
+						}
+						break
+					case "updateWhitelistedFiles":
+						if (Array.isArray(message.files)) {
+							await this.updateWhitelistedFiles(message.files)
+							await this.postStateToWebview()
+						}
+						break
 				}
 			},
 			null,
@@ -471,10 +502,9 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 			customInstructions,
 			approveReadFile,
 			approveListFilesTopLevel,
-			approveListFilesRecursively,		  
+			approveListFilesRecursively,
+			taskHistory
 		} = await this.getState()
-		const { apiConfiguration, maxRequestsPerTask, lastShownAnnouncementId, customInstructions, taskHistory } =
-			await this.getState()
 		this.postMessageToWebview({
 			type: "state",
 			state: {
@@ -488,7 +518,9 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 				shouldShowAnnouncement: lastShownAnnouncementId !== this.latestAnnouncementId,
 				approveReadFile,
 				approveListFilesTopLevel,
-				approveListFilesRecursively,				
+				approveListFilesRecursively,
+				excludedFiles: Array.from(this.excludedFiles),
+				whitelistedFiles: Array.from(this.whitelistedFiles)
 			},
 		})
 	}
@@ -496,88 +528,8 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 	async clearTask() {
 		this.claudeDev?.abortTask()
 		this.claudeDev = undefined // removes reference to it, so once promises end it will be garbage collected
+		this.outputChannel.appendLine("Cleared task")
 	}
-
-	// Caching mechanism to keep track of webview messages + API conversation history per provider instance
-
-	/*
-	Now that we use retainContextWhenHidden, we don't have to store a cache of claude messages in the user's state, but we could to reduce memory footprint in long conversations.
-
-	- We have to be careful of what state is shared between ClaudeDevProvider instances since there could be multiple instances of the extension running at once. For example when we cached claude messages using the same key, two instances of the extension could end up using the same key and overwriting each other's messages.
-	- Some state does need to be shared between the instances, i.e. the API key--however there doesn't seem to be a good way to notfy the other instances that the API key has changed.
-
-	We need to use a unique identifier for each ClaudeDevProvider instance's message cache since we could be running several instances of the extension outside of just the sidebar i.e. in editor panels.
-
-	For now since we don't need to store task history, we'll just use an identifier unique to this provider instance (since there can be several provider instances open at once).
-	However in the future when we implement task history, we'll need to use a unique identifier for each task. As well as manage a data structure that keeps track of task history with their associated identifiers and the task message itself, to present in a 'Task History' view.
-	Task history is a significant undertaking as it would require refactoring how we wait for ask responses--it would need to be a hidden claudeMessage, so that user's can resume tasks that ended with an ask.
-	*/
-	// private providerInstanceIdentifier = Date.now()
-	// getClaudeMessagesStateKey() {
-	// 	return `claudeMessages-${this.providerInstanceIdentifier}`
-	// }
-
-	// getApiConversationHistoryStateKey() {
-	// 	return `apiConversationHistory-${this.providerInstanceIdentifier}`
-	// }
-
-	// claude messages to present in the webview
-
-	// getClaudeMessages(): ClaudeMessage[] {
-	// 	// const messages = (await this.getGlobalState(this.getClaudeMessagesStateKey())) as ClaudeMessage[]
-	// 	// return messages || []
-	// 	return this.claudeMessages
-	// }
-
-	// setClaudeMessages(messages: ClaudeMessage[] | undefined) {
-	// 	// await this.updateGlobalState(this.getClaudeMessagesStateKey(), messages)
-	// 	this.claudeMessages = messages || []
-	// }
-
-	// addClaudeMessage(message: ClaudeMessage): ClaudeMessage[] {
-	// 	// const messages = await this.getClaudeMessages()
-	// 	// messages.push(message)
-	// 	// await this.setClaudeMessages(messages)
-	// 	// return messages
-	// 	this.claudeMessages.push(message)
-	// 	return this.claudeMessages
-	// }
-
-	// conversation history to send in API requests
-
-	/*
-	It seems that some API messages do not comply with vscode state requirements. Either the Anthropic library is manipulating these values somehow in the backend in a way thats creating cyclic references, or the API returns a function or a Symbol as part of the message content.
-	VSCode docs about state: "The value must be JSON-stringifyable ... value — A value. MUST not contain cyclic references."
-	For now we'll store the conversation history in memory, and if we need to store in state directly we'd need to do a manual conversion to ensure proper json stringification.
-	*/
-
-	// getApiConversationHistory(): Anthropic.MessageParam[] {
-	// 	// const history = (await this.getGlobalState(
-	// 	// 	this.getApiConversationHistoryStateKey()
-	// 	// )) as Anthropic.MessageParam[]
-	// 	// return history || []
-	// 	return this.apiConversationHistory
-	// }
-
-	// setApiConversationHistory(history: Anthropic.MessageParam[] | undefined) {
-	// 	// await this.updateGlobalState(this.getApiConversationHistoryStateKey(), history)
-	// 	this.apiConversationHistory = history || []
-	// }
-
-	// addMessageToApiConversationHistory(message: Anthropic.MessageParam): Anthropic.MessageParam[] {
-	// 	// const history = await this.getApiConversationHistory()
-	// 	// history.push(message)
-	// 	// await this.setApiConversationHistory(history)
-	// 	// return history
-	// 	this.apiConversationHistory.push(message)
-	// 	return this.apiConversationHistory
-	// }
-
-	/*
-	Storage
-	https://dev.to/kompotkot/how-to-use-secretstorage-in-your-vscode-extensions-2hco
-	https://www.eliostruyf.com/devhack-code-extension-storage-options/
-	*/
 
 	async getState() {
 		const [
@@ -593,8 +545,10 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 			customInstructions,
 			approveReadFile,
 			approveListFilesTopLevel,
-			approveListFilesRecursively,
+			approveListFilesRecursively,			
 			taskHistory,
+			excludedFiles,
+			whitelistedFiles
 		] = await Promise.all([
 			this.getGlobalState("apiProvider") as Promise<ApiProvider | undefined>,
 			this.getGlobalState("apiModelId") as Promise<ApiModelId | undefined>,
@@ -610,6 +564,8 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 			this.getGlobalState("approveListFilesTopLevel") as Promise<boolean | undefined>,
 			this.getGlobalState("approveListFilesRecursively") as Promise<boolean | undefined>,			
 			this.getGlobalState("taskHistory") as Promise<HistoryItem[] | undefined>,
+			this.getGlobalState("excludedFiles") as Promise<string[] | undefined>,
+			this.getGlobalState("whitelistedFiles") as Promise<string[] | undefined>
 		])
 
 		let apiProvider: ApiProvider
@@ -643,16 +599,26 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 			approveListFilesTopLevel,
 			approveListFilesRecursively,			
 			taskHistory,
+			excludedFiles: excludedFiles || [],
+			whitelistedFiles: whitelistedFiles || []
 		}
 	}
 
 	async updateTaskHistory(item: HistoryItem): Promise<HistoryItem[]> {
 		const history = ((await this.getGlobalState("taskHistory")) as HistoryItem[]) || []
 		const existingItemIndex = history.findIndex((h) => h.id === item.id)
+		
+		// Include excluded and whitelisted files in the history item
+		const updatedItem = {
+			...item,
+			excludedFiles: Array.from(this.excludedFiles),
+			whitelistedFiles: Array.from(this.whitelistedFiles)
+		}
+		
 		if (existingItemIndex !== -1) {
-			history[existingItemIndex] = item
+			history[existingItemIndex] = updatedItem
 		} else {
-			history.push(item)
+			history.push(updatedItem)
 		}
 		await this.updateGlobalState("taskHistory", history)
 		return history
@@ -662,43 +628,80 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 
 	private async updateGlobalState(key: GlobalStateKey, value: any) {
 		await this.context.globalState.update(key, value)
+		this.outputChannel.appendLine(`Updated global state: ${key}`)
 	}
 
 	private async getGlobalState(key: GlobalStateKey) {
-		return await this.context.globalState.get(key)
+		const value = await this.context.globalState.get(key)
+		this.outputChannel.appendLine(`Got global state: ${key}`)
+		return value
 	}
 
 	// workspace
 
 	private async updateWorkspaceState(key: string, value: any) {
 		await this.context.workspaceState.update(key, value)
+		this.outputChannel.appendLine(`Updated workspace state: ${key}`)
 	}
 
 	private async getWorkspaceState(key: string) {
-		return await this.context.workspaceState.get(key)
+		const value = await this.context.workspaceState.get(key)
+		this.outputChannel.appendLine(`Got workspace state: ${key}`)
+		return value
 	}
-
-	// private async clearState() {
-	// 	this.context.workspaceState.keys().forEach((key) => {
-	// 		this.context.workspaceState.update(key, undefined)
-	// 	})
-	// 	this.context.globalState.keys().forEach((key) => {
-	// 		this.context.globalState.update(key, undefined)
-	// 	})
-	// 	this.context.secrets.delete("apiKey")
-	// }
 
 	// secrets
 
 	private async storeSecret(key: SecretKey, value?: string) {
 		if (value) {
 			await this.context.secrets.store(key, value)
+			this.outputChannel.appendLine(`Stored secret: ${key}`)
 		} else {
 			await this.context.secrets.delete(key)
+			this.outputChannel.appendLine(`Deleted secret: ${key}`)
 		}
 	}
 
 	private async getSecret(key: SecretKey) {
-		return await this.context.secrets.get(key)
+		const value = await this.context.secrets.get(key)
+		this.outputChannel.appendLine(`Got secret: ${key}`)
+		return value
+	}
+
+	async updateExcludedFiles(files: string[]) {
+		this.excludedFiles = new Set(files)
+		await this.saveExcludedFiles()
+		if (this.claudeDev) {
+			this.claudeDev.setExcludedFiles(Array.from(this.excludedFiles))
+		}
+		this.outputChannel.appendLine("Updated excluded files")
+	}
+
+	async updateWhitelistedFiles(files: string[]) {
+		this.whitelistedFiles = new Set(files)
+		await this.saveWhitelistedFiles()
+		if (this.claudeDev) {
+			this.claudeDev.setWhitelistedFiles(Array.from(this.whitelistedFiles))
+		}
+		this.outputChannel.appendLine("Updated whitelisted files")
+	}
+
+	private async loadExcludedAndWhitelistedFiles() {
+		const excludedFiles = await this.getGlobalState("excludedFiles") as string[] | undefined
+		const whitelistedFiles = await this.getGlobalState("whitelistedFiles") as string[] | undefined
+		
+		this.excludedFiles = new Set(excludedFiles || [])
+		this.whitelistedFiles = new Set(whitelistedFiles || [])
+		this.outputChannel.appendLine("Loaded excluded and whitelisted files")
+	}
+
+	private async saveExcludedFiles() {
+		await this.updateGlobalState("excludedFiles", Array.from(this.excludedFiles))
+		this.outputChannel.appendLine("Saved excluded files")
+	}
+
+	private async saveWhitelistedFiles() {
+		await this.updateGlobalState("whitelistedFiles", Array.from(this.whitelistedFiles))
+		this.outputChannel.appendLine("Saved whitelisted files")
 	}
 }

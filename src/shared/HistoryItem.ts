@@ -7,4 +7,6 @@ export type HistoryItem = {
 	cacheWrites?: number
 	cacheReads?: number
 	totalCost: number
+	excludedFiles: string[]  // New property
+	whitelistedFiles: string[]  // New property	
 }

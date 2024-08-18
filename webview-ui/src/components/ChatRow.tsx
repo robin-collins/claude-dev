@@ -15,6 +15,8 @@ interface ChatRowProps {
 	onToggleExpand: () => void
 	lastModifiedMessage?: ClaudeMessage
 	isLast: boolean
+	excludedFiles: string[]
+	whitelistedFiles: string[]
 }
 
 const ChatRow: React.FC<ChatRowProps> = ({
@@ -24,6 +26,8 @@ const ChatRow: React.FC<ChatRowProps> = ({
 	onToggleExpand,
 	lastModifiedMessage,
 	isLast,
+	excludedFiles,
+	whitelistedFiles,
 }) => {
 	const cost = message.text != null && message.say === "api_req_started" ? JSON.parse(message.text).cost : undefined
 	const apiRequestFailedMessage =
@@ -231,6 +235,27 @@ const ChatRow: React.FC<ChatRowProps> = ({
 		)
 	}
 
+	const renderFileStatus = (filePath: string) => {
+		if (excludedFiles.includes(filePath)) {
+				return (
+						<span 
+								className="codicon codicon-error" 
+								style={{ color: "var(--vscode-errorForeground)", marginRight: "5px" }}
+								title="File access denied"
+						></span>
+				)
+		} else if (whitelistedFiles.includes(filePath)) {
+				return (
+						<span 
+								className="codicon codicon-check" 
+								style={{ color: "var(--vscode-testing-iconPassed)", marginRight: "5px" }}
+								title="File automatically approved"
+						></span>
+				)
+		}
+		return null
+}
+
 	const renderContent = () => {
 		const [icon, title] = getIconAndTitle(message.type === "ask" ? message.ask : message.say)
 
@@ -355,6 +380,7 @@ const ChatRow: React.FC<ChatRowProps> = ({
 										<div style={headerStyle}>
 											{toolIcon("edit")}
 											<span style={{ fontWeight: "bold" }}>Claude wants to edit this file:</span>
+											{renderFileStatus(tool.path!)}
 										</div>
 										<CodeBlock
 											diff={tool.diff!}
@@ -373,6 +399,7 @@ const ChatRow: React.FC<ChatRowProps> = ({
 											<span style={{ fontWeight: "bold" }}>
 												Claude wants to create a new file:
 											</span>
+											{renderFileStatus(tool.path!)}
 										</div>
 										<CodeBlock
 											code={tool.content!}
@@ -389,6 +416,7 @@ const ChatRow: React.FC<ChatRowProps> = ({
 										<div style={headerStyle}>
 											{toolIcon("file-code")}
 											<span style={{ fontWeight: "bold" }}>Claude wants to read this file:</span>
+											{renderFileStatus(tool.path!)}
 										</div>
 										<CodeBlock
 											code={tool.content!}
@@ -409,7 +437,7 @@ const ChatRow: React.FC<ChatRowProps> = ({
 											</span>
 										</div>
 										<CodeBlock
-											code={tool.content!}
+											code={renderFileListWithStatus(tool.content!)}
 											path={tool.path!}
 											language="shell-session"
 											syntaxHighlighterStyle={syntaxHighlighterStyle}
@@ -428,7 +456,7 @@ const ChatRow: React.FC<ChatRowProps> = ({
 											</span>
 										</div>
 										<CodeBlock
-											code={tool.content!}
+											code={renderFileListWithStatus(tool.content!)}
 											path={tool.path!}
 											language="shell-session"
 											syntaxHighlighterStyle={syntaxHighlighterStyle}
@@ -547,6 +575,14 @@ const ChatRow: React.FC<ChatRowProps> = ({
 		}
 	}
 
+	const renderFileListWithStatus = (content: string) => {
+		const lines = content.split('\n')
+		return lines.map(line => {
+			const filePath = line.trim()
+			const status = renderFileStatus(filePath)
+			return status ? `${status.props.children.props.children} ${filePath}` : filePath
+		}).join('\n')
+	}
 	// NOTE: we cannot return null as virtuoso does not support it, so we must use a separate visibleMessages array to filter out messages that should not be rendered
 
 	return (

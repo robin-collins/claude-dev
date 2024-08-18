@@ -5,11 +5,13 @@ import { HistoryItem } from "./HistoryItem"
 
 // webview will hold state
 export interface ExtensionMessage {
-	type: "action" | "state" | "selectedImages"
+	type: "action" | "state" | "selectedImages" | "filePermissionsUpdate"
 	text?: string
 	action?: "chatButtonTapped" | "settingsButtonTapped" | "historyButtonTapped" | "didBecomeVisible"
 	state?: ExtensionState
 	images?: string[]
+	excludedFiles?: string[]
+	whitelistedFiles?: string[]
 }
 
 export interface ExtensionState {
@@ -23,7 +25,9 @@ export interface ExtensionState {
 	shouldShowAnnouncement: boolean
 	approveReadFile?: boolean
 	approveListFilesTopLevel?: boolean
-	approveListFilesRecursively?: boolean	
+	approveListFilesRecursively?: boolean
+	excludedFiles: string[]
+	whitelistedFiles: string[]
 }
 
 export interface ClaudeMessage {
