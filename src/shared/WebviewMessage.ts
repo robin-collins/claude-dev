@@ -11,6 +11,9 @@ export interface WebviewMessage {
 		| "clearTask"
 		| "didShowAnnouncement"
 		| "selectImages"
+		| "approveReadFile"
+		| "approveListFilesTopLevel"
+		| "approveListFilesRecursively"		
 		| "exportCurrentTask"
 		| "showTaskWithId"
 		| "deleteTaskWithId"
@@ -19,6 +22,7 @@ export interface WebviewMessage {
 	askResponse?: ClaudeAskResponse
 	apiConfiguration?: ApiConfiguration
 	images?: string[]
+	value?: boolean  // Add this line for the new approval settings	
 }
 
 export type ClaudeAskResponse = "yesButtonTapped" | "noButtonTapped" | "messageResponse"

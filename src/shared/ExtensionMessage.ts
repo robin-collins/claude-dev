@@ -21,6 +21,9 @@ export interface ExtensionState {
 	claudeMessages: ClaudeMessage[]
 	taskHistory: HistoryItem[]
 	shouldShowAnnouncement: boolean
+	approveReadFile?: boolean
+	approveListFilesTopLevel?: boolean
+	approveListFilesRecursively?: boolean	
 }
 
 export interface ClaudeMessage {
